@@ -1,0 +1,33 @@
+{
+  "name": "api-service-template",
+  "version": "1.0.0",
+  "description": "API Service Template with TypeScript",
+  "main": "dist/handler.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "dev": "tsc --watch",
+    "generate-types": "openapi-typescript ../openapi-api-template/openapi.yaml --output src/types.ts",
+    "watch-openapi": "nodemon --watch ../openapi-api-template/openapi.yaml --exec npm run generate-types",
+    "validate-openapi": "swagger-parser validate ../openapi-api-template/openapi.yaml"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.133",
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.8.10",
+    "eslint": "^8.53.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.0.3",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2",
+    "openapi-typescript": "^7.0.0",
+    "@apidevtools/swagger-parser": "^5.0.0",
+    "nodemon": "^3.0.0"
+  },
+  "keywords": ["api", "typescript", "lambda", "openapi"],
+  "author": "",
+  "license": "ISC"
+}

@@ -1,0 +1,96 @@
+name: OpenAPI Sync
+
+on:
+  push:
+    paths: 
+      - 'openapi-api-template/openapi.yaml'
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  OPENAPI_DIR: openapi-api-template
+  API_SERVICE_DIR: api-service-template
+
+jobs:
+  sync-types:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Use Node.js 18
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+        cache-dependency-path: ${{ env.API_SERVICE_DIR }}/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npm ci
+    
+    - name: Install OpenAPI tools
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npm install --save-dev openapi-typescript @apidevtools/swagger-parser
+    
+    - name: Validate OpenAPI specification
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npx swagger-parser validate ../${{ env.OPENAPI_DIR }}/openapi.yaml
+    
+    - name: Generate TypeScript types
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npx openapi-typescript ../${{ env.OPENAPI_DIR }}/openapi.yaml --output src/types.ts
+    
+    - name: Check for changes
+      id: check-changes
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        if [ -n "$(git status --porcelain src/types.ts)" ]; then
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "📝 Type definitions have been updated"
+        else
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "✅ Type definitions are up to date"
+        fi
+    
+    - name: Commit and push changes
+      if: steps.check-changes.outputs.has_changes == 'true'
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add src/types.ts
+        git commit -m "🤖 Auto-update TypeScript types from OpenAPI specification
+
+        - Generated from: ${{ env.OPENAPI_DIR }}/openapi.yaml
+        - Triggered by: ${{ github.event_name }}
+        - Commit: ${{ github.sha }}"
+        git push
+    
+    - name: Create pull request if needed
+      if: steps.check-changes.outputs.has_changes == 'true'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        title: "🤖 Auto-update TypeScript types from OpenAPI specification"
+        body: |
+          ## 📝 Auto-generated TypeScript types update
+          
+          This PR was automatically created by the OpenAPI Sync workflow.
+          
+          **Changes:**
+          - Updated TypeScript type definitions from OpenAPI specification
+          - Generated from: `${{ env.OPENAPI_DIR }}/openapi.yaml`
+          - Triggered by: `${{ github.event_name }}`
+          
+          **Files changed:**
+          - `${{ env.API_SERVICE_DIR }}/src/types.ts`
+          
+          Please review the changes and merge if everything looks correct.
+        branch: auto-update-types-${{ github.run_number }}
+        delete-branch: true 

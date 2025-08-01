@@ -1,0 +1,82 @@
+openapi: 3.0.4
+info:
+ title: 開発サンプルAPI - OpenAPI 3.0
+ description: >-
+  Open APIの開発サンプル用のAPI仕様です。
+ version: 1.0.12
+servers:
+ - url: http://localhost:8080
+tags:
+ - name: user
+   description: Operations about user
+paths:
+ /sample-calc:
+  get:
+   tags:
+    - sample
+   summary: 計算API
+   description: サンプルAPI、実行結果として与えられた数値の加算値を返却する。
+   parameters:
+    - name: num1
+      in: query
+      description: パラメータ数値１
+      required: true
+      explode: true
+      schema:
+        type: string
+    - name: num2
+      in: query
+      description: パラメータ数値２
+      required: true
+      explode: true
+      schema:
+        type: string
+   responses:
+    '200':
+     description: リクエスト成功時、返却オブジェクト
+     content:
+      application/json:
+       schema:
+        $ref: '#/components/schemas/Result'
+    '400':
+      description: エラー時、返却オブジェクト
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    default:
+     description: Unexpected error
+     content:
+      application/json:
+       schema:
+        $ref: '#/components/schemas/Error'
+components:
+ schemas:
+  Result:
+   type: object
+   properties:
+    date:
+     type: string
+     description: 実行日時
+     example: 2025/06/18 12:00:00
+    calc-result:
+     type: integer
+     format: int32
+     description: 計算結果
+     example: 123
+   xml:
+    name: user
+  Error:
+   type: object
+   properties:
+    code:
+     type: string
+     description: エラーコード
+     example: "00001"
+    message:
+     type: string
+     description: エラーメッセージ
+     example: "入力が数値型ではありません"
+   required:
+    - code
+    - message

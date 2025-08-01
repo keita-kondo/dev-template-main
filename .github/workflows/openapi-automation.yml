@@ -1,0 +1,110 @@
+name: OpenAPI Automation
+
+on:
+  push:
+    paths: 
+      - 'openapi-api-template/**'
+      - 'api-service-template/**'
+    branches: [ "main" ]
+  pull_request:
+    paths: 
+      - 'openapi-api-template/**'
+      - 'api-service-template/**'
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  OPENAPI_DIR: openapi-api-template
+  API_SERVICE_DIR: api-service-template
+
+jobs:
+  validate-openapi:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js 18
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+        cache-dependency-path: ${{ env.API_SERVICE_DIR }}/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npm ci
+    
+    - name: Install OpenAPI tools
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npm install --save-dev openapi-typescript @apidevtools/swagger-parser
+    
+    - name: Validate OpenAPI specification
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npx swagger-parser validate ../${{ env.OPENAPI_DIR }}/openapi.yaml
+    
+    - name: Generate TypeScript types
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npx openapi-typescript ../${{ env.OPENAPI_DIR }}/openapi.yaml --output src/types.ts
+    
+    - name: Check for type generation changes
+      id: check-changes
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        if [ -n "$(git status --porcelain src/types.ts)" ]; then
+          echo "types_changed=true" >> $GITHUB_OUTPUT
+          echo "⚠️ Type definitions have changed. Please commit the updated types."
+        else
+          echo "types_changed=false" >> $GITHUB_OUTPUT
+          echo "✅ Type definitions are up to date."
+        fi
+    
+    - name: Commit type changes
+      if: steps.check-changes.outputs.types_changed == 'true'
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add src/types.ts
+        git commit -m "Auto-generate TypeScript types from OpenAPI specification" || echo "No changes to commit"
+    
+    - name: Build and test with generated types
+      run: |
+        cd ${{ env.API_SERVICE_DIR }}
+        npm run build
+        npm test
+    
+    - name: Upload generated types as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: generated-types
+        path: ${{ env.API_SERVICE_DIR }}/src/types.ts
+        retention-days: 7
+
+  openapi-docs:
+    runs-on: ubuntu-latest
+    needs: validate-openapi
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js 18
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+    
+    - name: Install OpenAPI documentation tools
+      run: npm install -g @redocly/cli
+    
+    - name: Generate API documentation
+      run: |
+        npx redocly build-docs ${{ env.OPENAPI_DIR }}/openapi.yaml -o api-docs.html
+    
+    - name: Upload API documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-documentation
+        path: api-docs.html
+        retention-days: 30 

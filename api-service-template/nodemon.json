@@ -1,0 +1,9 @@
+{
+  "watch": ["../openapi-api-template/openapi.yaml"],
+  "ext": "yaml,yml",
+  "ignore": ["src/types.ts"],
+  "exec": "npm run generate-types",
+  "env": {
+    "NODE_ENV": "development"
+  }
+} 

@@ -1,0 +1,126 @@
+name: Node.js CI
+
+on:
+  push:
+    paths: api-service-template/**
+    branches: [ "main" ]
+  pull_request:
+    paths: api-service-template/**
+    branches: [ "main" ]
+
+env:
+  PROJECT_DIR: api-service-template
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # 成果物の階層がroot出ない場合は以下を指定する
+    defaults:
+      run:
+        working-directory: ${{ env.PROJECT_DIR }}
+    
+    steps:
+    # コードをリポジトリからチェックアウト（mainブランチ対象）
+    - uses: actions/checkout@v4
+
+    # Node.js 18 をセットアップし、npm の依存キャッシュを有効化
+    - name: Use Node.js 18
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+        cache-dependency-path: ${{ env.PROJECT_DIR }}/package-lock.json
+    
+    # npm の依存関係を package-lock.json に従ってインストール
+    - run: npm ci
+
+    # OpenAPI仕様から型定義を自動生成
+    - name: Generate TypeScript types from OpenAPI
+      run: |
+        npm install --save-dev openapi-typescript @apidevtools/swagger-parser
+        npx openapi-typescript ../openapi-api-template/openapi.yaml --output src/types.ts
+
+    # ビルドスクリプトがあれば実行（無ければスキップ）
+    - run: npm run build --if-present
+
+    # Jest を JSON 出力付きで実行
+    # テスト失敗時も exit 1 にせず後続処理を継続（|| true により強制成功扱い）
+    - name: Run Jest with JSON output
+      run: npx jest --json --outputFile=jest-results.json || true
+
+    # 失敗したテストがある場合、GitHub Actions のログに警告メッセージを出力
+    - name: Warn if tests failed
+      run: |
+        FAILED=$(jq '.numFailedTests' jest-results.json)
+        if [ "$FAILED" -gt 0 ]; then
+          echo "::warning::There are $FAILED failed test(s)."
+        fi
+
+    # Jest の出力（jest-results.json）から失敗テスト情報を抽出し Markdown を生成
+    - name: Show test summary in job summary
+      id: summary
+      run: |
+        if [ $(jq '.numFailedTests' jest-results.json) -eq 0 ]; then
+          echo "All tests passed! 🎉" > result.md
+        else
+          # Markdown テーブルのヘッダーを記述
+          echo "## ❌ Failed Tests" > result.md
+          echo "| Suite (Describe) | Test Name | File:Line |" >> result.md
+          echo "| ---------------- | --------- | --------- |" >> result.md
+
+          # 失敗テスト1件ずつ処理
+          jq -c '
+            .testResults[]
+            | .testFilePath as $file
+            | .assertionResults[]
+            | select(.status=="failed")
+            | {
+                suite: (.ancestorTitles | join(" > ")),
+                name: .fullName,
+                message: (.failureMessages | join("\n"))
+              }
+          ' jest-results.json | while read -r row; do
+            # 各項目を抽出
+            suite=$(echo "$row" | jq -r '.suite')
+            name=$(echo "$row" | jq -r '.name')
+            message=$(echo "$row" | jq -r '.message')
+
+            # フルパス中の ts ファイル位置を抽出（括弧を除去）
+            loc=$(echo "$message" | grep -Eo '[^ ]+\.ts:[0-9]+:[0-9]+' | head -n 1 | sed 's/[()]//g')
+            
+            # フルパス → 相対パスに変換（GITHUB_WORKSPACE を除去）
+            if [ -n "$loc" ]; then
+              loc=$(echo "$loc" | sed "s|$GITHUB_WORKSPACE/||")
+            else
+              loc="（位置情報なし）"
+            fi
+
+            # テーブル行として出力
+            printf "| %s | %s | %s |\n" "$suite" "$name" "$loc" >> result.md
+          done
+
+          # テーブル下部に注釈コメントを追加
+          echo "" >> result.md
+          echo "> ※ File:Line列はテスト失敗時のソースコード上の相対パス（ファイル:行:列）を出力します。" >> result.md
+          echo "> Jestのエラーメッセージから抽出しているため、正確な位置が得られない場合もあります。" >> result.md
+        fi
+
+        # 後続ステップへの出力変数として result.md のパスを指定
+        echo "summary_file=result.md" >> $GITHUB_OUTPUT
+
+    # 生成した Markdown をアーティファクトとして保存（必要に応じてダウンロード可能）
+    - name: Upload job summary
+      uses: actions/upload-artifact@v4
+      with:
+        name: jest-summary
+        path: ${{ env.PROJECT_DIR }}/result.md
+
+    # GitHub Actions の UI 上に Markdown の内容をジョブサマリーとして表示
+    - name: Add job summary markdown to GitHub UI
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('${{ env.PROJECT_DIR }}/result.md', 'utf8');
+          core.summary.addRaw(summary).write();

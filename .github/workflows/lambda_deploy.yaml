@@ -1,0 +1,60 @@
+name: Deploy Lambda
+
+on:
+  workflow_dispatch: # 手動実行
+
+env:
+  PROJECT_DIR: api-service-template
+
+jobs:
+  deploy:
+    name: Build & Deploy to Lambda
+    runs-on: ubuntu-latest
+
+    # 成果物の階層がroot出ない場合は以下を指定する
+    defaults:
+      run:
+        working-directory: ${{ env.PROJECT_DIR }}
+
+    permissions:
+      id-token: write   # OIDC用に必要
+      contents: read
+
+    steps:
+      # GitHubからコードをチェックアウト
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # Node.js セットアップ
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PROJECT_DIR }}/package-lock.json
+
+      # 依存関係インストール
+      - name: Install dependencies
+        run: npm ci
+
+      # TypeScript ビルド
+      - name: Build TypeScript
+        run: npm run build
+
+      # AWS認証（OIDC）
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Lambdaデプロイ用ZIP作成
+      - name: Zip Lambda function
+        run: zip -r function.zip dist node_modules package.json
+
+      # Lambda関数を更新
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name sample-calc \
+            --zip-file fileb://function.zip
