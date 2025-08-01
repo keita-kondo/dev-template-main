@@ -9,7 +9,9 @@
     "dev": "tsc --watch",
     "generate-types": "openapi-typescript ../openapi-api-template/openapi.yaml --output src/types.ts",
     "watch-openapi": "nodemon --watch ../openapi-api-template/openapi.yaml --exec npm run generate-types",
-    "validate-openapi": "swagger-parser validate ../openapi-api-template/openapi.yaml"
+    "validate-openapi": "swagger-parser validate ../openapi-api-template/openapi.yaml",
+    "prebuild": "npm run generate-types",
+    "pretest": "npm run generate-types"
   },
   "engines": {
     "node": ">=18"
